@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using BepInEx;
+using BepInEx.Logging;
 using AuthoritativeConfig;
 using HarmonyLib;
 using UnityEngine;
@@ -9,7 +10,7 @@ using System;
 
 namespace SpeedyPaths
 {
-    [BepInPlugin("nex.SpeedyPaths", "Speedy Paths Mod", "1.0.6")]
+    [BepInPlugin("nex.SpeedyPaths", "Speedy Paths Mod", "1.0.7")]
     public class SpeedyPathsClientMod : BaseUnityPlugin { 
         public enum GroundType
         {
@@ -30,10 +31,13 @@ namespace SpeedyPaths
         private static ConfigEntry<string> _hudStatusText;
         private static ConfigEntry<bool> _hudDynamicStatusText;
         private static ConfigEntry<bool> _hudShowEffectPercent;
+        private static ConfigEntry<bool> _applyModifierToEncumbered;
+        private static ConfigEntry<bool> _applyModifierToSneak;
         private static List<ConfigEntry<float>> _hudPosIconThresholds = new List<ConfigEntry<float>>();
         private static List<ConfigEntry<float>> _hudNegIconThresholds = new List<ConfigEntry<float>>();
         private static ConfigEntry<float> _groundSensorUpdateInterval;
         private static ConfigEntry<int> _groundSensorRadius;
+        private static ConfigEntry<bool> _printGroundSensorLogs;
 
         //Display Strings
         private static Dictionary<GroundType, ConfigEntry<string>> _groundTypeStrings = new Dictionary<GroundType, ConfigEntry<string>>();
@@ -78,6 +82,10 @@ namespace SpeedyPaths
 
             _groundSensorUpdateInterval = Config.Bind("Performance", "Ground Sensor Interval", 1.0f, "Interval between in seconds between ground type checks. Lower number, more accute ground detection.", true);
             _groundSensorRadius = Config.Bind("Performance", "Ground Sensor Radius", 1, "Radius of ground pixels to sample when checking under the player", true);
+            _printGroundSensorLogs = Config.Bind("Debug", "Ground Sensor Logs", false, "Prints the ground sensor debug info to logs. Very verbose.", false);
+
+            _applyModifierToEncumbered = Config.Bind("Misc", "Apply Modifier to Encumbered", true, "Applies the current speed modifier to the player in an encumbered state", true);
+            _applyModifierToSneak = Config.Bind("Misc", "Apply Modifier to Sneak", true, "Applies the current speed modifier to the player in an crouched/sneaking state", true);
 
             _speedModifiers[GroundType.PathDirt] = Config.Bind("SpeedModifiers", "DirtPathSpeed", 1.15f, "Modifier for speed while on dirt paths");
             _speedModifiers[GroundType.PathStone] = Config.Bind("SpeedModifiers", "StonePathSpeed", 1.4f, "Modifier for speed while on stone paths");
@@ -183,6 +191,25 @@ namespace SpeedyPaths
         static void CheckRunPostfixStaminaMod( Player __instance, float __state )
         {
             __instance.m_runStaminaDrain = __state;
+        }
+
+        [HarmonyPatch(typeof(Character), "UpdateWalking")]
+        [HarmonyPrefix]
+        static void UpdateWalkingPrefixMod( Character __instance, out float __state )
+        {
+            __state = __instance.m_crouchSpeed;
+            if((__instance.IsEncumbered() && _applyModifierToEncumbered.Value) 
+                || (__instance.IsSneaking() && _applyModifierToSneak.Value))
+            {
+                __instance.m_crouchSpeed *= _activeSpeedModifier;
+            }
+        }
+        [HarmonyPatch(typeof(Character), "UpdateWalking")]
+        [HarmonyPostfix]
+        static void UpdateWalkingPostfixMod( Character __instance, float __state )
+        {
+            __instance.m_crouchSpeed = __state;
+
         }
 
         [HarmonyPatch(typeof(Player), "GetJogSpeedFactor")]
@@ -345,18 +372,23 @@ namespace SpeedyPaths
                         y_range_max = paintMask.height - y_range_min - 1;
                     }
 
-                    //Logger.LogInfo($"Fetching Pixel range x: {x_range_min.ToString()} + {x_range_max.ToString()}  y: {y_range_min.ToString()} + {y_range_max.ToString()}");
+                    if(_printGroundSensorLogs.Value) 
+                    { 
+                        Logger.LogInfo($@"Fetching Pixel range x: {x_range_min.ToString()} + {x_range_max.ToString()}  
+                                                            y: {y_range_min.ToString()} + {y_range_max.ToString()}"); 
+                    }
                     var samples = paintMask.GetPixels(x_range_min, y_range_min, x_range_max, y_range_max, 0);
-                    //Logger.LogInfo($"Got Samples: {samples.Length.ToString()}");
-
                     foreach(var pixel in samples)
                     {
                         hmcl_pixel += pixel;
-                        //Logger.LogInfo($"Sample: {pixel.ToString()}");
+                        if(_printGroundSensorLogs.Value) { Logger.LogInfo($"Sample: {pixel.ToString()}"); }
                     }
 
                     hmcl_pixel = new Color(hmcl_pixel.r / samples.Length, hmcl_pixel.g / samples.Length, hmcl_pixel.b / samples.Length);
-                    //Logger.LogInfo($"Avg ground pixel {hmcl_pixel.ToString()} from {samples.ToString()} Samples");
+                    if(_printGroundSensorLogs.Value) 
+                    { 
+                        Logger.LogInfo($"Avg ground pixel {hmcl_pixel.ToString()} from {samples.ToString()} Samples"); 
+                    }
 
                     //Single Pixel
                     //Color hmcl_pixel = paintMask.GetPixel( (int)_worldToVertexArgs[1], (int)_worldToVertexArgs[2] );
