@@ -352,6 +352,9 @@ https://valheim.thunderstore.io/package/Nextek/SpeedyPaths/
 https://github.com/NNaso/ValheimMods/tree/main/SpeedyPaths
 
 ## Changelog
+**Version 1.0.9**  
+- Added support for Grausten structures
+
 **Version 1.0.8**  
 - Updated for Valheim Patch 0.216.9
 
